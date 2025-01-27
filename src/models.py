@@ -21,8 +21,14 @@ class User(db.Model):
         return {
             "id": self.id,
             "email": self.email,
-            # "favourites": [favourite.serialize for favourite in self.favourites_users]
+            "favourites": [favourite.serialize() for favourite in self.favourites_users]
             # do not serialize the password, its a security breach
+        }
+    
+    def favourites_serialize(self):
+        return {
+            "id": self.id,
+            "email": self.email
         }
 
 class Favourites(db.Model):
@@ -41,7 +47,7 @@ class Favourites(db.Model):
     def serialize(self):
         return {
             "id": self.id,
-            "user_id": self.users_favourites_id,
+            "user": self.users_favourites.favourites_serialize(),
             "people": self.people_favourites.serialize() if self.people_favourites else None,
             "planets": self.planet_favourites.serialize() if self.planet_favourites else None
         }
@@ -65,11 +71,9 @@ class People(db.Model):
     disciple: Mapped[str] = mapped_column(String(250), nullable=True)
     image: Mapped[str] = mapped_column(String, nullable=True)
     films: Mapped[str] = mapped_column(String, nullable=True)
-    # relación con favoritos
-    # favourites_people: Mapped[List["Favourites"]] = relationship(back_populates="people_favourites")
     # relación con planets
     homeworld_id: Mapped[int] = mapped_column(ForeignKey("planets.id"), nullable=True)
-    homeworld: Mapped[List["Planets"]] = relationship(back_populates="resident")
+    homeworld: Mapped["Planets"] = relationship(back_populates="residents")
 
     def serialize(self):
         return {
@@ -89,8 +93,13 @@ class People(db.Model):
             "disciple": self.disciple,
             "image": self.image,
             "films": self.films,
-            # "favourites": self.favourites_people,
-            "homeworld": self.homeworld.serialize() if self.homeworld else None
+            "homeworld": self.homeworld.residents_serialize() if self.homeworld else None
+        }
+    
+    def homeworld_serialize(self):
+        return {
+            "id": self.id,
+            "name": self.name
         }
 
 class Planets(db.Model):
@@ -108,10 +117,8 @@ class Planets(db.Model):
     image: Mapped[str] = mapped_column(String, nullable=True)
     species: Mapped[str] = mapped_column(String(100), nullable=True)
     films: Mapped[str] = mapped_column(String(500), nullable=True)
-    # relación con favoritos
-    # favourites_planet: Mapped[List["Favourites"]] = relationship(back_populates="planet_favourites")
     # relación con people
-    resident: Mapped[List["People"]] = relationship(back_populates="homeworld")
+    residents: Mapped[List["People"]] = relationship(back_populates="homeworld")
 
     def serialize(self):
         return {
@@ -128,8 +135,13 @@ class Planets(db.Model):
             "image": self.image,
             "species": self.species,
             "films": self.films,
-            # "favourites": self.favourites_planet,
-            "resident": [person.serialize for person in self.resident]
+            "residents": [person.homeworld_serialize() for person in self.residents] if self.residents else None
+        }
+    
+    def residents_serialize(self):
+        return {
+            "id": self.id,
+            "name": self.name
         }
 
 # from flask_sqlalchemy import SQLAlchemy

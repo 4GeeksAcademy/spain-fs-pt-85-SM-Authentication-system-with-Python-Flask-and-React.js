@@ -39,7 +39,7 @@ def sitemap():
     return generate_sitemap(app)
 
 # enpoints de user
-@app.route('/user', methods=['GET'])
+@app.route('/users', methods=['GET'])
 def get_users():
     data = db.session.scalars(select(User)).all()
     results = list(map(lambda item: item.serialize(), data))
@@ -170,7 +170,6 @@ def delete_favourite_character(people_id):
 @app.route('/people', methods=['GET'])
 def get_people():
     data = db.session.scalars(select(People)).all()
-    print(data)
     results = list(map(lambda person: person.serialize(), data))
     response_body = {
         "results": results
@@ -193,17 +192,22 @@ def get_specific_users(people_id):
 @app.route('/people', methods=['POST'])
 def add_person():
     request_data = request.json
-    name = request_data.get("name")
     if "name" not in request_data:
         return jsonify({"error": "name field is obligatory"})
-    try:
-        person_exists = db.session.execute(db.select(People).filter_by(name=name.lower())).scalar_one()
-        if person_exists:
-            return ({"error": f"{name} already exists"}), 400
-    except:
-        None
+    name = request_data.get("name")
+    data = db.session.scalars(select(People)).all()
+    results = list(map(lambda person: person.serialize(), data))
+    for person in results:
+        if person["name"].lower() == name.lower():
+            return jsonify({"error": f"{name} already exists"})
+    homeworld = None
+    if request_data.get("homeworld_id"):
+        homeworld_id = request_data.get("homeworld_id")
+        try:
+            homeworld = db.session.execute(db.select(Planets).filter_by(id=homeworld_id)).scalar_one()
+        except NoResultFound:
+            return jsonify({"error": "planet not found"}), 404
     new_person = People(
-        # id = request_data.get("id"),
         name = request_data.get("name"),
         birth_year = request_data.get("birth_year"),
         eye_color = request_data.get("eye_color"),
@@ -219,11 +223,11 @@ def add_person():
         disciple = request_data.get("disciple"),
         image = request_data.get("image"),
         films = request_data.get("films"),
-        homeworld_id = request_data.get("homeworld_id"),
-        homeworld = request_data.get("homeworld")
+        # homeworld_id = request_data.get("homeworld_id"),
+        homeworld = homeworld
     )
     db.session.add(new_person)
-    # db.session.commit()
+    db.session.commit()
     return jsonify({"results": new_person.serialize()}), 200
 
 # enpoints de planets
@@ -247,19 +251,26 @@ def get_specific_planet(planet_id):
     }
     return jsonify(response_body), 200
 
-
+# en revisión para que se vincule correctamente el resident con el people apropiado
 @app.route('/planets', methods=['POST'])
 def add_planet():
     request_data = request.json
     name = request_data.get("name")
     if "name" not in request_data:
         return jsonify({"error": "name field is obligatory"})
-    try:
-        planet_exists = db.session.execute(db.select(Planets).filter_by(name=name.lower())).scalar_one()
-        if planet_exists:
-            return ({"error": f"{name} already exists"}), 400
-    except:
-        None
+    
+    data = db.session.scalars(select(Planets)).all()
+    results = list(map(lambda planet: planet.serialize(), data))
+    for planet in results:
+        if planet["name"].lower() == name.lower():
+            return jsonify({"error": f"{name} already exists"})
+    residents = []
+    if request_data.get("residents_id"):
+        residents_id = request_data.get("residents_id")
+        try:
+            residents = db.session.execute(db.select(People).filter_by(id=residents_id)).scalar_one()
+        except NoResultFound:
+            return jsonify({"error": "person not found"}), 404
     new_planet = Planets(
         name = request_data.get("name"),
         diameter = request_data.get("diameter"),
@@ -273,10 +284,10 @@ def add_planet():
         image = request_data.get("image"),
         species = request_data.get("species"),
         films = request_data.get("films"),
-        resident = request_data.get("resident")
+        residents = residents
     )
     db.session.add(new_planet)
-    # db.session.commit()
+    db.session.commit()
     return jsonify({"results": new_planet.serialize()}), 200
 
 # this only runs if `$ python src/app.py` is executed
