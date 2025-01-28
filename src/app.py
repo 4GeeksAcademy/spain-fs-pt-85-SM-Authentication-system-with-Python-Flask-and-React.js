@@ -193,13 +193,13 @@ def get_specific_users(people_id):
 def add_person():
     request_data = request.json
     if "name" not in request_data:
-        return jsonify({"error": "name field is obligatory"})
+        return jsonify({"error": "name field is obligatory"}), 400
     name = request_data.get("name")
     data = db.session.scalars(select(People)).all()
     results = list(map(lambda person: person.serialize(), data))
     for person in results:
         if person["name"].lower() == name.lower():
-            return jsonify({"error": f"{name} already exists"})
+            return jsonify({"error": f"{name} already exists"}), 400
     homeworld = None
     if request_data.get("homeworld_id"):
         homeworld_id = request_data.get("homeworld_id")
@@ -223,7 +223,6 @@ def add_person():
         disciple = request_data.get("disciple"),
         image = request_data.get("image"),
         films = request_data.get("films"),
-        # homeworld_id = request_data.get("homeworld_id"),
         homeworld = homeworld
     )
     db.session.add(new_person)
@@ -257,18 +256,20 @@ def add_planet():
     request_data = request.json
     name = request_data.get("name")
     if "name" not in request_data:
-        return jsonify({"error": "name field is obligatory"})
+        return jsonify({"error": "name field is obligatory"}), 400
     
     data = db.session.scalars(select(Planets)).all()
     results = list(map(lambda planet: planet.serialize(), data))
     for planet in results:
         if planet["name"].lower() == name.lower():
-            return jsonify({"error": f"{name} already exists"})
+            return jsonify({"error": f"{name} already exists"}), 400
     residents = []
     if request_data.get("residents_id"):
         residents_id = request_data.get("residents_id")
+        if not isinstance(residents_id, list):
+            return jsonify({"error": "residents_id must be a list"}), 400
         try:
-            residents = db.session.execute(db.select(People).filter_by(id=residents_id)).scalar_one()
+            residents = db.session.scalars(select(People).filter(People.id.in_(residents_id))).all()
         except NoResultFound:
             return jsonify({"error": "person not found"}), 404
     new_planet = Planets(
