@@ -257,7 +257,6 @@ def add_planet():
     name = request_data.get("name")
     if "name" not in request_data:
         return jsonify({"error": "name field is obligatory"}), 400
-    
     data = db.session.scalars(select(Planets)).all()
     results = list(map(lambda planet: planet.serialize(), data))
     for planet in results:
