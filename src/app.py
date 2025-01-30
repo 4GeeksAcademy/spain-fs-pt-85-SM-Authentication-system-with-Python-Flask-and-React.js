@@ -11,7 +11,7 @@ from flask_cors import CORS
 from utils import APIException, generate_sitemap
 from admin import setup_admin
 from models import db, User, Favourites, People, Planets
-#from models import Person
+from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
@@ -28,6 +28,10 @@ db.init_app(app)
 CORS(app)
 setup_admin(app)
 
+# Setup the Flask-JWT-Extended extension
+app.config["JWT_SECRET_KEY"] = "ligamento-peroneoastragalino-anterior"
+jwt = JWTManager(app)
+
 # Handle/serialize errors like a JSON object
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
@@ -37,6 +41,26 @@ def handle_invalid_usage(error):
 @app.route('/')
 def sitemap():
     return generate_sitemap(app)
+
+# route to let the user authenticate
+@app.route("/login", methods=["POST"])
+def login():
+    request_data = request.json
+    needed_data = ["email", "password"]
+    for item in needed_data:
+        if item not in request_data:
+            return jsonify({"msg": f"{item} is obligatory"}), 400
+    email = request_data.get("email", None)
+    password = request_data.get("password", None)
+    try:
+        user = db.session.execute(db.select(User).filter_by(email=email)).scalar_one()
+    except:
+        return jsonify({"error": "user not found"}), 404
+    if email != user.email or password != user.password:
+        return jsonify({"msg": "Bad email or password"}), 401
+    access_token = create_access_token(identity=email)
+    return jsonify(access_token=access_token)
+
 
 # enpoints de user
 @app.route('/users', methods=['GET'])
@@ -50,7 +74,7 @@ def get_users():
     }
     return jsonify(response_body), 200
 
-@app.route('/user', methods=['POST'])
+@app.route('/signup', methods=['POST'])
 def add_user():
     request_data = request.json
     email = request_data.get("email")
@@ -73,35 +97,57 @@ def add_user():
     return jsonify({"results": new_user.serialize()}), 200
 
 # enpoints de favourites
-@app.route('/users/favorites', methods=['GET'])
+@app.route('/user/favorites', methods=['GET'])
+@jwt_required()
 def get_favourites():
-    data = db.session.scalars(select(Favourites)).all()
-    results = list(map(lambda favourite: favourite.serialize(), data))
-    if results == []:
-        results = "there aren't any favourites"
+    current_user = get_jwt_identity()
+    try:
+        user = db.session.execute(db.select(User).filter_by(email=current_user)).scalar_one()
+    except:
+        return jsonify({"msg": "we got trouble getting the user, please try again later"}), 500
+    try:
+        favourites = db.session.scalars(db.select(Favourites).filter_by(users_favourites_id=user.id)).all()
+    except Exception as e:
+        print(f"Exception 111: {e}")
+        return jsonify({"msg": "something went wrong retrieving your data, if the problem persists please contact your administrator"}), 500
+    results = list(map(lambda favourite: favourite.serialize(), favourites))
     response_body = {
         "results": results
     }
     return jsonify(response_body), 200
 
+
+@app.route('/user/favorites/<int:favourite_id>', methods=['DELETE'])
+@jwt_required()
+def delete_favourite(favourite_id):
+    current_user=get_jwt_identity()
+    user = db.session.execute(db.select(User).filter_by(email=current_user)).scalar_one()
+    try:
+        favourites = db.session.execute(db.select(Favourites).filter_by(id=favourite_id, users_favourites_id=user.id)).scalar_one()
+    except:
+        return jsonify({"msg": "the favourite wasn't found"}), 404   
+    db.session.delete(favourites)
+    db.session.commit()
+    return jsonify ({"msg": "favourite deleted"})
+
+
 @app.route('/favorite/planet/<int:planet_id>', methods=['POST'])
+@jwt_required()
 def add_favourite_planet(planet_id):
+    current_user = get_jwt_identity()
     request_data = request.json
-    if "user_id" not in request_data:
-        return jsonify({"error": "key user_id is obligatory."}), 400
-    user_id = request_data["user_id"]
     try:
         planet = db.session.execute(db.select(Planets).filter_by(id=planet_id)).scalar_one()
     except NoResultFound:
         return jsonify({"error": "planet not found."}), 404
     try:
-        user = db.session.execute(db.select(User).filter_by(id=user_id)).scalar_one()
+        user = db.session.execute(db.select(User).filter_by(email=current_user)).scalar_one()
     except NoResultFound:
         return jsonify({"error": "user not found"}), 404
     try:
-        favourite_exist = db.session.execute(db.select(Favourites).filter_by(users_favourites_id=user_id, planet_favourites_id=planet_id)).scalar_one()
+        favourite_exist = db.session.execute(db.select(Favourites).filter_by(users_favourites_id=user.id, planet_favourites_id=planet_id)).scalar_one()
         if favourite_exist:
-            return jsonify({"msg": f"the user with id {user_id} already has the person with id {planet_id} as a favourite"}), 400
+            return jsonify({"msg": f"the user {user.email} already has the planet with id {planet_id} as a favourite"}), 400
     except:
         None
     new_favourite = Favourites(
@@ -113,23 +159,22 @@ def add_favourite_planet(planet_id):
     return jsonify(new_favourite.serialize()), 200
 
 @app.route('/favorite/people/<int:people_id>', methods=['POST'])
+@jwt_required()
 def add_favourite_person(people_id):
+    current_user = get_jwt_identity()
     request_data = request.json
-    if "user_id" not in request_data:
-        return jsonify({"error": "key user_id is obligatory."}), 400
-    user_id = request_data["user_id"]
     try:
         person = db.session.execute(db.select(People).filter_by(id=people_id)).scalar_one()
     except NoResultFound:
         return jsonify({"error": "person not found."}), 404
     try:
-        user = db.session.execute(db.select(User).filter_by(id=user_id)).scalar_one()
+        user = db.session.execute(db.select(User).filter_by(email=current_user)).scalar_one()
     except NoResultFound:
         return jsonify({"error": "user not found"}), 404
     try:
-        favourite_exist = db.session.execute(db.select(Favourites).filter_by(users_favourites_id=user_id, people_favourites_id=people_id)).scalar_one()
+        favourite_exist = db.session.execute(db.select(Favourites).filter_by(users_favourites_id=user.id, people_favourites_id=people_id)).scalar_one()
         if favourite_exist:
-            return jsonify({"msg": f"the user with id {user_id} already has the person with id {people_id} as a favourite"}), 400
+            return jsonify({"msg": f"the user {user.email} already has the person with id {people_id} as a favourite"}), 400
     except:
         None
     new_favourite = Favourites(
@@ -141,6 +186,7 @@ def add_favourite_person(people_id):
     return jsonify(new_favourite.serialize()), 200
 
 @app.route('/favorite/planet/<int:planet_id>', methods=['DELETE'])
+@jwt_required()
 def delete_favourite_planet(planet_id):
     try:
         planet = db.session.execute(db.select(Favourites).filter_by(id=planet_id)).scalar_one()
@@ -154,6 +200,7 @@ def delete_favourite_planet(planet_id):
 
 
 @app.route('/favorite/people/<int:people_id>', methods=['DELETE'])
+@jwt_required()
 def delete_favourite_character(people_id):
     try:
         person = db.session.execute(db.select(Favourites).filter_by(id=people_id)).scalar_one()
